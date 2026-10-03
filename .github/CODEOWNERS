@@ -1,0 +1,8 @@
+# Every change needs the maintainer's review. Cryptographic code, detection policy, the ignore file and CI
+# workflows are listed explicitly: add a security reviewer here as soon as the project has one.
+*                              @dylanckoldan-boop
+/src/cryptomigrate/crypto/     @dylanckoldan-boop
+/src/cryptomigrate/keys/       @dylanckoldan-boop
+/src/cryptomigrate/policies/   @dylanckoldan-boop
+/.cryptomigrateignore          @dylanckoldan-boop
+/.github/workflows/            @dylanckoldan-boop

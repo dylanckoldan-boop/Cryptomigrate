@@ -1,0 +1,186 @@
+# =============================================================================
+# Security layer: user authentication and wireless security
+# =============================================================================
+# DES survives in authentication long after it leaves encryption: crypt(3) password
+# hashes, LAN Manager / NTLMv1, and MS-CHAPv2 (PPTP VPNs and PEAP Wi-Fi) all reduce to DES.
+id: auth-wireless
+name: "User authentication & wireless security"
+version: "1.0.0"
+description: >-
+  DES-based authentication (crypt, LM/NTLMv1, MS-CHAPv2), weak password storage, hard-coded credentials, and
+  wireless configuration (WEP, TKIP, WPA1, PMF, WPS, 802.1X without server validation).
+target_algorithm: Argon2id
+legacy_algorithms: [DES, MD5, SHA-1]
+normalization:
+  - algorithm: SHA-256
+    markers: [sha256]
+  - algorithm: SHA-512
+    markers: [sha512]
+  - algorithm: MD5
+    markers: [md5, apr1]
+  - algorithm: SHA-1
+    markers: [sha1, sha]
+algorithms:
+  MD5: {display: "MD5", oid: "1.2.840.113549.2.5", primitive: hash, nist_quantum_security_level: 0}
+  SHA-1: {display: "SHA-1", oid: "1.3.14.3.2.26", primitive: hash, nist_quantum_security_level: 0}
+compliance:
+  NIST-SP-800-63B:
+    title: "NIST SP 800-63B (authentication and verifier requirements)"
+    requirement: "Passwords stored salted and hashed with a suitable one-way key-derivation function; phishing-resistant MFA at higher assurance levels."
+  OWASP-PASSWORD-STORAGE:
+    title: "OWASP Password Storage Cheat Sheet"
+    requirement: "Argon2id (m=19 MiB, t=2, p=1), scrypt (N=2^17, r=8, p=1), bcrypt (cost >= 10) or PBKDF2-HMAC-SHA256 (600,000 iterations)."
+  NIST-SP-800-153:
+    title: "NIST SP 800-153 (securing WLANs)"
+    requirement: "Standardized, hardened WLAN configurations with strong authentication and encryption, and continuous monitoring."
+  WPA3:
+    title: "Wi-Fi Alliance WPA3"
+    requirement: "SAE or 802.1X with server-certificate validation; Protected Management Frames mandatory; no WEP or TKIP."
+
+rules:
+  - id: AUTH-CRYPT-001
+    title: "DES-based crypt(3) password hash"
+    category: config
+    files: ["shadow", "*shadow*", "passwd", "*.passwd", ".htpasswd", "*.htpasswd", "htpasswd*"]
+    pattern: '(?m)^[^:#\s]+:(?P<secret>[./0-9A-Za-z]{13})(?=:|\s*$)'
+    algorithm: DES
+    severity: critical
+    confidence: high
+    cwe: [CWE-916, CWE-327]
+    remediation: "Force password resets and store yescrypt / SHA-512-crypt (Linux) or bcrypt (htpasswd -B). DES crypt uses only the first 8 characters and a 56-bit key."
+
+  - id: AUTH-HTPASSWD-001
+    title: "Weak htpasswd hash scheme"
+    category: config
+    files: [".htpasswd", "*.htpasswd", "htpasswd*"]
+    pattern: '(?m)^[^:#\s]+:(?P<secret>(?P<alg>\{SHA\}|\$apr1\$)\S+)'
+    severity: {SHA-1: high, MD5: medium}
+    confidence: high
+    cwe: [CWE-916]
+    remediation: "Re-hash with bcrypt (htpasswd -B -C 12), or move authentication to an identity provider with MFA."
+
+  - id: AUTH-NTLM-001
+    title: "Windows allows LM / NTLMv1 authentication (DES-based)"
+    category: config
+    files: ["*.reg"]
+    pattern: '(?i)"LmCompatibilityLevel"=dword:0000000[0-4]'
+    algorithm: DES
+    severity: high
+    confidence: high
+    cwe: [CWE-327, CWE-757]
+    remediation: "Set LmCompatibilityLevel to 5 (send NTLMv2 only, refuse LM and NTLM) and plan Kerberos-only authentication; NTLMv1 responses reduce to DES."
+
+  - id: AUTH-NTLM-002
+    title: "Windows stores LAN Manager password hashes (DES-based)"
+    category: config
+    files: ["*.reg"]
+    pattern: '(?i)"NoLMHash"=dword:00000000'
+    algorithm: DES
+    severity: critical
+    confidence: high
+    cwe: [CWE-916, CWE-327]
+    remediation: "Set NoLMHash=1 and force password changes so existing LM hashes are discarded."
+
+  - id: AUTH-MSCHAP-001
+    title: "MS-CHAPv2 / PPTP authentication (reducible to single DES)"
+    category: config
+    files: ["pptpd.conf", "options.pptpd", "*pptp*", "*.ppp"]
+    pattern: '(?im)^[ \t]*(?:require-mschap-v2|require-mschap)\b'
+    algorithm: DES
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Retire PPTP; use IKEv2, WireGuard or OpenVPN with certificate authentication. MS-CHAPv2 can be cracked by reducing it to one DES key search."
+
+  - id: AUTH-HASH-001
+    title: "Password hashed with a fast hash (no work factor)"
+    category: source
+    files: ["*.py", "*.java", "*.kt", "*.cs", "*.vb", "*.js", "*.ts", "*.php", "*.rb", "*.go", "*.sql"]
+    pattern: '(?im)^(?![^\n]*(?:pbkdf2|bcrypt|scrypt|argon2|hashpw|password_hash|make_password|\bkdf\b))(?=[^\n]*(?:password|passwd|passphrase|\bpwd\b))(?=[^\n]*\b(?P<alg>md5|sha1|sha_1|sha256|sha512|sha-1|sha-256)\b)[^\n]+$'
+    algorithm: n/a
+    severity: medium
+    confidence: low
+    cwe: [CWE-916]
+    remediation: "Store passwords with Argon2id (m=19 MiB, t=2, p=1), scrypt, bcrypt (cost >= 10) or PBKDF2-HMAC-SHA256 (600,000 iterations) - OWASP Password Storage Cheat Sheet."
+
+  - id: AUTH-CRED-001
+    title: "Hard-coded credential"
+    category: source
+    files: ["*.py", "*.java", "*.kt", "*.cs", "*.vb", "*.js", "*.ts", "*.php", "*.rb", "*.go", "*.properties", "*.yml", "*.yaml", "*.json", "*.xml", "*.ini", "*.conf", "*.env"]
+    pattern: '(?i)[\w.-]*(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\b[''"]?\s*[:=]\s*[''"](?P<secret>[^''"\s$<{%][^''"\s]{5,})[''"]'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-798]
+    remediation: "Move secrets to a secrets manager or environment injection, rotate the exposed value, and enable secret scanning (e.g. GitHub push protection)."
+
+  # ---------------------------------------------- wireless
+  - id: WIFI-WEP-001
+    title: "Wi-Fi uses WEP"
+    category: config
+    files: ["hostapd*.conf", "*hostapd*", "wpa_supplicant*.conf", "*wpa_supplicant*", "*.nmconnection"]
+    pattern: '(?im)^[ \t]*(?:wep_key[0-3]|wep_default_key|wep-key[0-3]|wep-key-type)\s*='
+    algorithm: WEP
+    severity: critical
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Replace WEP with WPA3-Personal (SAE) or WPA3-Enterprise; WEP's RC4-based design is broken and keys are recoverable in minutes."
+
+  - id: WIFI-TKIP-001
+    title: "Wi-Fi allows TKIP"
+    category: config
+    files: ["hostapd*.conf", "*hostapd*", "wpa_supplicant*.conf", "*wpa_supplicant*", "*.nmconnection"]
+    pattern: '(?im)^[ \t]*(?:wpa_pairwise|rsn_pairwise|pairwise|group)\s*=\s*[^\n#]*\bTKIP\b'
+    algorithm: TKIP
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use CCMP (AES) or GCMP-256 only; TKIP is deprecated in IEEE 802.11 and not permitted in WPA3."
+
+  - id: WIFI-WPA1-001
+    title: "Wi-Fi allows WPA version 1"
+    category: config
+    files: ["hostapd*.conf", "*hostapd*"]
+    pattern: '(?im)^[ \t]*wpa\s*=\s*[13]\b'
+    algorithm: WPA
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Set wpa=2 with SAE (WPA3-Personal); use WPA2/WPA3 transition mode only while legacy clients are retired."
+
+  - id: WIFI-PMF-001
+    title: "Wi-Fi Protected Management Frames disabled"
+    category: config
+    files: ["hostapd*.conf", "*hostapd*", "*.nmconnection"]
+    pattern: '(?im)^[ \t]*(?:ieee80211w\s*=\s*0|pmf\s*=\s*1)\b'
+    algorithm: n/a
+    severity: medium
+    confidence: high
+    cwe: [CWE-306]
+    remediation: "Require PMF (802.11w): ieee80211w=2 in hostapd (mandatory for WPA3), pmf=3 in NetworkManager."
+
+  - id: WIFI-WPS-001
+    title: "Wi-Fi Protected Setup (WPS) enabled"
+    category: config
+    files: ["hostapd*.conf", "*hostapd*"]
+    pattern: '(?im)^[ \t]*wps_state\s*=\s*[12]\b'
+    algorithm: n/a
+    severity: medium
+    confidence: high
+    cwe: [CWE-307]
+    remediation: "Disable WPS (wps_state=0); its PIN method can be brute-forced in hours."
+
+  - id: WIFI-EAP-001
+    title: "802.1X Wi-Fi uses MS-CHAPv2 without server-certificate validation"
+    category: config
+    files: ["wpa_supplicant*.conf", "*wpa_supplicant*", "*.nmconnection", "*.8021x"]
+    pattern: '(?s)network\s*=\s*\{.*?\n[ \t]*\}|\[802-1x\][^\[]*'
+    validator: eap-ca
+    algorithm: DES
+    severity: high
+    confidence: high
+    cwe: [CWE-295, CWE-522]
+    remediation: >-
+      Validate the RADIUS server certificate (ca_cert + domain_suffix_match), or better move to EAP-TLS with client
+      certificates. Without validation a rogue access point captures MS-CHAPv2 exchanges, which reduce to one DES
+      key search.

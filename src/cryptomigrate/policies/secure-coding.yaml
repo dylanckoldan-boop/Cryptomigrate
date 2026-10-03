@@ -1,0 +1,150 @@
+# =============================================================================
+# Security layer: SQL injection and memory safety (buffer overflows)
+# =============================================================================
+id: secure-coding
+name: "SQL injection & memory safety"
+version: "1.0.0"
+description: >-
+  SQL built by string concatenation or formatting, unbounded C string functions, exploit mitigations disabled
+  in builds, and checksec-style verification of shipped ELF binaries.
+target_algorithm: n/a
+legacy_algorithms: []
+normalization: []
+algorithms: {}
+compliance:
+  OWASP-TOP-10:
+    title: "OWASP Top 10 (2021) A03 Injection"
+    requirement: "Parameterized queries or safe APIs, server-side allow-list validation, least-privilege database accounts."
+  CWE-TOP-25:
+    title: "CWE Top 25 Most Dangerous Software Weaknesses"
+    requirement: "Eliminate out-of-bounds write (CWE-787), SQL injection (CWE-89) and classic buffer overflow (CWE-120)."
+  OPENSSF-HARDENING:
+    title: "OpenSSF Compiler Options Hardening Guide for C and C++"
+    requirement: "Stack protector, FORTIFY_SOURCE, PIE, full RELRO, non-executable stack, control-flow protection."
+  NIST-SSDF:
+    title: "NIST SP 800-218 (Secure Software Development Framework)"
+    requirement: "Secure build configuration, code review and analysis, and security testing."
+    controls: [PW.6, PW.7, PW.8]
+
+rules:
+  - id: SQLI-PY-001
+    title: "SQL built with string formatting (Python)"
+    category: source
+    files: ["*.py"]
+    pattern: '\.(?:execute|executemany|executescript|raw)\s*\(\s*(?:f["'']|["''][^"''\n]*["'']\s*(?:%|\+|\.format\b))|\b(?:text|RawSQL)\s*\(\s*f["'']'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-89]
+    remediation: >-
+      Bind parameters instead of formatting values into SQL: cursor.execute("... WHERE id = %s", (value,)),
+      SQLAlchemy text() with :params, or the ORM. Allow-list any dynamic identifiers.
+
+  - id: SQLI-JAVA-001
+    title: "SQL built by concatenation (Java/JVM)"
+    category: source
+    files: ["*.java", "*.kt", "*.scala", "*.groovy"]
+    pattern: '\b(?:executeQuery|executeUpdate|execute|prepareStatement|createQuery|createNativeQuery|addBatch)\s*\(\s*(?:"[^"\n]*"\s*\+|String\.format\s*\()'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-89]
+    remediation: "Use PreparedStatement with ? placeholders (or JPA named parameters); concatenating into prepareStatement() defeats it."
+
+  - id: SQLI-PHP-001
+    title: "SQL built from request data or interpolated variables (PHP)"
+    category: source
+    files: ["*.php", "*.phtml", "*.inc"]
+    pattern: '(?:mysql_query|mysqli_query|pg_query|->query|->exec|->prepare)\s*\([^;\n]*(?:\$_(?:GET|POST|REQUEST|COOKIE)\b|"[^"\n]*\$\w+)'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-89]
+    remediation: "Use PDO or mysqli prepared statements with bound parameters; never interpolate request data."
+
+  - id: SQLI-JS-001
+    title: "SQL built with template literals or concatenation (JavaScript/TypeScript)"
+    category: source
+    files: ["*.js", "*.mjs", "*.cjs", "*.ts", "*.tsx"]
+    pattern: '\.(?:query|execute|raw|\$queryRawUnsafe|\$executeRawUnsafe)\s*\(\s*(?:`[^`]*\$\{|["''][^"''\n]*["'']\s*\+)'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-89]
+    remediation: "Use parameterized queries (pg: query(text, values); mysql2: ? placeholders; Prisma tagged $queryRaw)."
+
+  - id: SQLI-CS-001
+    title: "SQL built with interpolation or concatenation (.NET)"
+    category: source
+    files: ["*.cs", "*.vb"]
+    pattern: '\b(?:new\s+SqlCommand\s*\(|CommandText\s*=|ExecuteSqlRaw\s*\(|FromSqlRaw\s*\()\s*(?:\$"|"[^"\n]*"\s*\+|string\.Format\s*\()'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-89]
+    remediation: "Use SqlParameter / parameterized commands, or EF Core FromSqlInterpolated / ExecuteSqlInterpolated."
+
+  - id: SQLI-GO-001
+    title: "SQL built with fmt.Sprintf or concatenation (Go)"
+    category: source
+    files: ["*.go"]
+    pattern: '\.(?:Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext)\s*\((?:\s*ctx\s*,)?\s*(?:fmt\.Sprintf\s*\(|"[^"\n]*"\s*\+)'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-89]
+    remediation: "Pass arguments separately: db.Query(\"... WHERE id = $1\", id)."
+
+  - id: MEM-C-001
+    title: "gets() - unbounded read, always exploitable"
+    category: source
+    files: ["*.c", "*.h", "*.cc", "*.cpp", "*.cxx", "*.hpp", "*.m", "*.mm"]
+    pattern: '\bgets\s*\('
+    algorithm: n/a
+    severity: critical
+    confidence: high
+    cwe: [CWE-242, CWE-120]
+    remediation: "Use fgets(buf, sizeof buf, stdin); gets() was removed in C11."
+
+  - id: MEM-C-002
+    title: "Unbounded string copy or format function"
+    category: source
+    files: ["*.c", "*.h", "*.cc", "*.cpp", "*.cxx", "*.hpp", "*.m", "*.mm"]
+    pattern: '\b(?:strcpy|strcat|sprintf|vsprintf|wcscpy|wcscat|lstrcpyA?|lstrcatA?|StrCpy|StrCat)\s*\('
+    algorithm: n/a
+    severity: high
+    confidence: high
+    cwe: [CWE-120, CWE-676]
+    remediation: "Use bounded APIs (snprintf, strlcpy/strlcat, or memcpy with checked lengths), compile with -D_FORTIFY_SOURCE=3, and prefer memory-safe languages for new code."
+
+  - id: MEM-C-003
+    title: "scanf-family %s without a field width"
+    category: source
+    files: ["*.c", "*.h", "*.cc", "*.cpp", "*.cxx", "*.hpp"]
+    pattern: '\b(?:scanf|sscanf|fscanf|vscanf)\s*\([^;\n]*"[^"\n]*%s'
+    algorithm: n/a
+    severity: high
+    confidence: high
+    cwe: [CWE-120]
+    remediation: "Always give a width (%63s for a 64-byte buffer), or read with fgets and parse."
+
+  - id: MEM-BUILD-001
+    title: "Exploit mitigation disabled in the build"
+    category: config
+    files: ["Makefile", "makefile", "GNUmakefile", "*.mk", "CMakeLists.txt", "*.cmake", "configure.ac", "configure.in", "meson.build", "*.vcxproj", "*.props", "build.sh", "*.gyp", "*.gypi", "BUILD", "BUILD.bazel", "*.bzl", "Dockerfile", "setup.py"]
+    pattern: '(?:-fno-stack-protector|-z\s*execstack|-Wl,-z,execstack|-D_FORTIFY_SOURCE=0|-U_FORTIFY_SOURCE|-no-pie\b|-Wl,-z,norelro|-z\s*norelro|-fcf-protection=none|/GS-|/DYNAMICBASE:NO|/NXCOMPAT:NO|/SAFESEH:NO|<BufferSecurityCheck>false</BufferSecurityCheck>)'
+    algorithm: n/a
+    severity: high
+    confidence: high
+    cwe: [CWE-693]
+    remediation: >-
+      Remove the flag and adopt the OpenSSF Compiler Options Hardening Guide: -fstack-protector-strong
+      -fstack-clash-protection -D_FORTIFY_SOURCE=3 -fcf-protection=full -fPIE -pie -Wl,-z,relro,-z,now
+      -Wl,-z,noexecstack (MSVC: /GS /DYNAMICBASE /NXCOMPAT /guard:cf /CETCOMPAT).
+
+  # ---------------------------------------------- shipped-binary verification (ELF)
+  - {id: MEM-BIN-NX-001, title: "Binary has an executable stack", category: binary, synthetic: true, severity: high, confidence: high, cwe: [CWE-693], remediation: "Link with -Wl,-z,noexecstack and remove assembly objects lacking a .note.GNU-stack section."}
+  - {id: MEM-BIN-PIE-001, title: "Executable is not position-independent (weak ASLR)", category: binary, synthetic: true, severity: medium, confidence: high, cwe: [CWE-693], remediation: "Build with -fPIE -pie."}
+  - {id: MEM-BIN-RELRO-001, title: "Relocations not fully read-only (RELRO)", category: binary, synthetic: true, severity: medium, confidence: high, cwe: [CWE-693], remediation: "Link with -Wl,-z,relro,-z,now (full RELRO)."}
+  - {id: MEM-BIN-CANARY-001, title: "No stack canary in a C/C++ binary", category: binary, synthetic: true, severity: medium, confidence: medium, cwe: [CWE-121], remediation: "Compile with -fstack-protector-strong (functions without arrays are not instrumented, so small programs can show false positives)."}
+  - {id: MEM-BIN-FORTIFY-001, title: "No _FORTIFY_SOURCE checked functions", category: binary, synthetic: true, severity: low, confidence: low, cwe: [CWE-120], remediation: "Compile with -O2 -D_FORTIFY_SOURCE=3."}

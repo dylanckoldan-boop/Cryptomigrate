@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+# cryptomigrate state (keystore, backups, audit log) - never commit
+.cryptomigrate/
+artifacts/
+demo-workspace/

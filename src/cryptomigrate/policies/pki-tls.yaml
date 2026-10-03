@@ -1,0 +1,117 @@
+# =============================================================================
+# Security layer: certificates (PKI), SSL/TLS handshakes and transport security
+# =============================================================================
+id: pki-tls
+name: "Certificates, TLS handshakes & transport security"
+version: "1.0.0"
+description: >-
+  Certificate hygiene for files and live endpoints, legacy SSL/TLS protocol versions, certificate-verification
+  bypasses in code, weak RSA keys and key transport, and private keys stored in repositories.
+target_algorithm: TLSv1.3
+legacy_algorithms: [SSLv3, TLSv1.0, TLSv1.1]
+normalization:
+  - algorithm: RSA
+    markers: [rsa]
+algorithms:
+  RSA: {display: "RSA", oid: "1.2.840.113549.1.1.1", primitive: pke, nist_quantum_security_level: 0}
+  SHA-1: {display: "SHA-1", oid: "1.3.14.3.2.26", primitive: hash, nist_quantum_security_level: 0}
+  MD5: {display: "MD5", oid: "1.2.840.113549.2.5", primitive: hash, nist_quantum_security_level: 0}
+compliance:
+  NIST-SP-800-52:
+    title: "NIST SP 800-52 Rev. 2 (TLS implementations)"
+    requirement: "Support TLS 1.2 and TLS 1.3; do not use SSL 2.0, SSL 3.0 or TLS 1.0; validate server certificate chains."
+  RFC-8996:
+    title: "RFC 8996 (deprecating TLS 1.0 and TLS 1.1)"
+    requirement: "TLS 1.0 and TLS 1.1 must not be used."
+  PCI-DSS-4.0-TRANSPORT:
+    title: "PCI DSS v4.0.1 Req. 4.2.1"
+    requirement: "Strong cryptography with trusted, valid certificates for cardholder data over open, public networks."
+    controls: ["4.2.1", "4.2.1.1"]
+  CABF-BR:
+    title: "CA/Browser Forum Baseline Requirements"
+    requirement: >-
+      Publicly-trusted TLS certificates: at most 398 days if issued before 2026-03-15, 200 days since then, 100 days
+      from 2027-03-15 and 47 days from 2029-03-15 (ballot SC-081v3); no SHA-1 signatures.
+  OWASP-ASVS-V9:
+    title: "OWASP ASVS 4.0.3 V9 (communications)"
+    requirement: "TLS for all connections, only current protocol versions, certificate validation enforced."
+    controls: [V9.1.2, V9.1.3, V9.2.1]
+
+rules:
+  - id: TLS-PROTO-001
+    title: "Legacy SSL/TLS protocol version enabled in configuration"
+    category: config
+    files: ["*.conf", "*.cnf", "*.cfg", "*.config", "*.xml", "*.properties", "*.ini", "*.vhost", "*.inc", "nginx*", "httpd*", "apache2*", "haproxy*", "main.cf", "dovecot*", "openssl*.cnf", "my.cnf"]
+    pattern: '(?im)^[ \t]*(?P<directive>ssl_protocols|SSLProtocol|SSLProxyProtocol|smtpd_tls_protocols|smtp_tls_protocols|smtpd_tls_mandatory_protocols|smtp_tls_mandatory_protocols|ssl_min_protocol|MinProtocol|https\.protocols|jdk\.tls\.client\.protocols|server\.ssl\.enabled-protocols)\b[ \t]*[=:]?[ \t]*(?P<value>[^\n;#]+)|\b(?P<directive2>sslEnabledProtocols|protocols)\s*=\s*"(?P<value2>[^"]*)"|\b(?P<directive3>ssl-min-ver)[ \t]+(?P<value3>\S+)'
+    validator: tls-protocols
+    fix: tls-protocols
+    algorithm: TLSv1.0
+    severity: {SSLv2: critical, SSLv3: critical, TLSv1.0: high, TLSv1.1: high}
+    confidence: high
+    cwe: [CWE-327, CWE-757]
+    remediation: >-
+      Allow only TLS 1.2 and TLS 1.3 (RFC 8996, NIST SP 800-52 Rev. 2). Automatable with `cryptomigrate remediate`:
+      legacy versions are dropped from explicit lists, excluded (-TLSv1 / !TLSv1) where a list uses `all` or
+      exclusion syntax, and minimum-version settings are raised to TLSv1.2.
+
+  - id: TLS-VERIFY-001
+    title: "TLS certificate or hostname verification disabled"
+    category: source
+    files: ["*.py", "*.go", "*.js", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.java", "*.kt", "*.scala", "*.cs", "*.vb", "*.php", "*.rb", "*.c", "*.cc", "*.cpp", "*.h", "*.sh", "*.bash", "*.ps1", "Dockerfile", "Makefile", "*.yml", "*.yaml"]
+    pattern: '\bverify\s*=\s*False\b|\b_create_unverified_context\b|\bCERT_NONE\b|\bcheck_hostname\s*=\s*False\b|\bInsecureSkipVerify\s*:\s*true\b|\brejectUnauthorized\s*:\s*false\b|NODE_TLS_REJECT_UNAUTHORIZED[''"]?\s*[=:]\s*[''"]?0\b|\b(?:NoopHostnameVerifier|ALLOW_ALL_HOSTNAME_VERIFIER|TrustAllStrategy|DangerousAcceptAnyServerCertificateValidator)\b|setHostnameVerifier\s*\(\s*\(\s*\w+\s*,\s*\w+\s*\)\s*->\s*true|ServerCertificate(?:Custom)?ValidationCallback\s*\+?=\s*(?:\([^)]*\)|\w+)\s*=>\s*true|CURLOPT_SSL_VERIFY(?:PEER|HOST)\s*,\s*(?:false|0L?)\b|[''"]verify_peer(?:_name)?[''"]\s*=>\s*false|OpenSSL::SSL::VERIFY_NONE|\bSSL_CTX_set_verify\s*\(\s*\w+\s*,\s*SSL_VERIFY_NONE|\bcurl\b[^\n]*\s(?:-k|--insecure)\b|\bwget\b[^\n]*--no-check-certificate'
+    algorithm: n/a
+    severity: high
+    confidence: medium
+    cwe: [CWE-295]
+    remediation: >-
+      Never disable certificate or hostname verification. To trust a private CA, configure its bundle (requests
+      verify="/path/ca.pem", Go RootCAs, a Java truststore); pin certificates only with a rotation plan.
+
+  - id: TLS-RSA-001
+    title: "RSA key generated below 2048 bits"
+    category: source
+    files: ["*.py", "*.java", "*.kt", "*.go", "*.cs", "*.vb", "*.sh", "*.bash", "*.ps1", "Makefile", "Dockerfile", "*.cnf", "*.conf"]
+    pattern: '\bgenerate_private_key\s*\([^)\n]*key_size\s*=\s*(?:512|768|1024)\b|\bRSA\.generate\s*\(\s*(?:512|768|1024)\b|KeyPairGenerator[^\n]*\n?[^\n]*\.initialize\s*\(\s*(?:512|768|1024)\s*[,)]|\brsa\.GenerateKey\s*\([^,\n]+,\s*(?:512|768|1024)\s*\)|\b(?:RSA\.Create|RSACryptoServiceProvider)\s*\(\s*(?:512|768|1024)\s*\)|\bopenssl\s+genrsa\b[^\n]*?\s(?:512|768|1024)\b|rsa_keygen_bits:(?:512|768|1024)\b|\bdefault_bits\s*=\s*(?:512|768|1024)\b'
+    algorithm: RSA
+    severity: high
+    confidence: medium
+    cwe: [CWE-326]
+    remediation: "Use RSA-3072 or larger (or ECDSA P-256 / Ed25519 for signatures). RSA-2048 is the NIST floor, and post-quantum guidance schedules RSA's retirement."
+
+  - id: TLS-RSA-002
+    title: "RSA encryption without OAEP (PKCS#1 v1.5 key transport)"
+    category: source
+    files: ["*.py", "*.java", "*.kt", "*.scala", "*.cs", "*.vb", "*.js", "*.mjs", "*.cjs", "*.ts", "*.php", "*.go"]
+    pattern: 'Cipher\.getInstance\(\s*"RSA(?:/(?:ECB|NONE)/PKCS1Padding)?"\s*\)|\.encrypt\s*\([^\n]*padding\.PKCS1v15\s*\(|\bPKCS1_v1_5\.new\s*\(|RSAEncryptionPadding\.Pkcs1\b|\bRSA_PKCS1_PADDING\b|\bopenssl_public_encrypt\s*\((?![^\n]*OAEP)[^\n]*\)|\brsa\.(?:EncryptPKCS1v15|DecryptPKCS1v15)\s*\('
+    algorithm: RSA
+    severity: high
+    confidence: medium
+    cwe: [CWE-780]
+    remediation: "Use RSA-OAEP with SHA-256 (or ECDH / ML-KEM key agreement). PKCS#1 v1.5 encryption invites Bleichenbacher-style padding-oracle attacks (ROBOT)."
+
+  - id: TLS-KEY-001
+    title: "Private key material stored in the repository"
+    category: config
+    files: ["*"]
+    pattern: '-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----'
+    validator: pem-private-key
+    algorithm: n/a
+    severity: critical
+    confidence: high
+    cwe: [CWE-321, CWE-798]
+    remediation: "Remove the key from the repository and its history, rotate it (assume compromise), and load keys from a secrets manager, HSM or KMS at run time."
+
+  # ---------------------------------------------- certificate analysis (files and endpoints)
+  - {id: CERT-SIG-001, title: "Certificate signed with a broken hash (MD5/SHA-1)", category: certificate, synthetic: true, severity: {MD5: critical, SHA-1: high}, confidence: high, cwe: [CWE-327, CWE-328], remediation: "Re-issue with SHA-256 or stronger; SHA-1 signatures are prohibited for publicly-trusted certificates."}
+  - {id: CERT-KEY-001, title: "Certificate public key too weak", category: certificate, synthetic: true, severity: {RSA: high, DSA: medium, EC: high}, confidence: high, cwe: [CWE-326], remediation: "Re-key with RSA-3072+ or ECDSA P-256/P-384 and re-issue."}
+  - {id: CERT-EXP-001, title: "Certificate expired", category: certificate, synthetic: true, severity: high, confidence: high, cwe: [CWE-298], remediation: "Renew now and automate renewal (ACME / certificate lifecycle management): public lifetimes shrink to 47 days by 2029."}
+  - {id: CERT-EXP-002, title: "Certificate expires soon", category: certificate, synthetic: true, severity: medium, confidence: high, cwe: [CWE-298], remediation: "Renew before expiry and automate renewal."}
+  - {id: CERT-SELF-001, title: "Self-signed end-entity certificate", category: certificate, synthetic: true, severity: low, confidence: high, cwe: [CWE-295], remediation: "Issue from an internal or public CA so clients validate the chain instead of pinning or disabling verification."}
+  - {id: CERT-SAN-001, title: "TLS certificate without subjectAltName", category: certificate, synthetic: true, severity: medium, confidence: high, cwe: [CWE-295], remediation: "Re-issue with every hostname/IP in subjectAltName; modern clients ignore the Common Name."}
+  - {id: CERT-LIFE-001, title: "Certificate lifetime exceeds the CA/Browser Forum maximum for its issue date", category: certificate, synthetic: true, severity: low, confidence: medium, cwe: [CWE-324], remediation: "Issue shorter-lived certificates and automate renewal: 200 days now, 100 from 2027-03-15, 47 from 2029-03-15 (publicly-trusted)."}
+
+  # ---------------------------------------------- live endpoint assessment
+  - {id: TLS-PROBE-PROTO-001, title: "Endpoint negotiates a legacy SSL/TLS protocol version", category: protocol, synthetic: true, severity: {SSLv3: critical, TLSv1.0: high, TLSv1.1: high}, confidence: high, cwe: [CWE-327, CWE-757], remediation: "Disable SSLv3, TLS 1.0 and TLS 1.1 on the endpoint or its load balancer; allow TLS 1.2 and 1.3 only."}
+  - {id: TLS-PROBE-MODERN-001, title: "Endpoint does not complete a TLS 1.2/1.3 handshake", category: protocol, synthetic: true, severity: high, confidence: high, cwe: [CWE-327], remediation: "Enable TLS 1.2 and TLS 1.3 with AEAD cipher suites."}
+  - {id: TLS-PROBE-CERT-001, title: "Endpoint certificate fails chain or hostname verification", category: protocol, synthetic: true, severity: high, confidence: high, cwe: [CWE-295], remediation: "Serve a complete chain from a trusted CA that matches the hostname (SAN); set scan.tls_ca_bundle for private PKI."}
+  - {id: TLS-PROBE-FS-001, title: "Endpoint key exchange without forward secrecy", category: protocol, synthetic: true, severity: medium, confidence: high, cwe: [CWE-327], remediation: "Prefer ECDHE (TLS 1.2) or TLS 1.3, which always has forward secrecy; remove static-RSA key-exchange suites."}

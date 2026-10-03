@@ -1,0 +1,46 @@
+name: Phase gate review
+description: Request sign-off to exit an SDLC phase of the DES/3DES to AES migration
+title: "[Gate] Phase "
+labels: ["phase-gate"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `cryptomigrate gate --phase N` and paste the output. Automated criteria must pass;
+        this issue records the **manual** approval. After approval, record it in `migration.yaml`
+        under `governance.signoffs` through a pull request that links this issue.
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - "1 - Initiation (charter approval)"
+        - "2 - Planning & Discovery (inventory validated by owners)"
+        - "3 - Analysis & Design (design & key-management review)"
+        - "4 - Development / Implementation (security code review)"
+        - "5 - Testing & Validation (UAT sign-off)"
+        - "6 - Deployment / Phased Rollout (change approval)"
+        - "7 - Post-Implementation & Closeout (sponsor acceptance)"
+    validations:
+      required: true
+  - type: textarea
+    id: gate-output
+    attributes:
+      label: "`cryptomigrate gate` output"
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence links
+      description: Workflow runs and artifacts (inventory, CBOM, assessment, validation, run manifests, verification).
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Approver confirmation
+      options:
+        - label: All automated exit criteria pass, or every deviation is documented above
+          required: true
+        - label: Open risks and exceptions for this phase are recorded (risk issues / governance.exceptions)
+          required: true

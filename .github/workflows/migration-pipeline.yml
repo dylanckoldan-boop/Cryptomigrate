@@ -1,0 +1,148 @@
+# Migration pipeline - runs SDLC stages against real systems (docs/GITHUB_INTEGRATION.md).
+#
+# Prerequisites
+#   * self-hosted runner labelled "cryptomigrate" with network access to the systems in migration.yaml
+#   * environments "migration-test" and "production"; production has REQUIRED REVIEWERS (your change board)
+#   * secret CRYPTOMIGRATE_KEK in each environment
+#   * migration.yaml keystore.path / state_dir / artifacts_dir set to persistent absolute paths
+#     (actions/checkout cleans the workspace), and repository variable CRYPTOMIGRATE_ARTIFACTS = artifacts_dir
+#
+# Deliberately NOT automated: legacy key destruction. It is irreversible, so an authorised operator runs
+# `cryptomigrate keys destroy` by hand after the stabilisation window.
+name: Migration pipeline (SDLC)
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: SDLC stage
+        type: choice
+        required: true
+        options: [status, discover-assess-plan, validate-and-dry-run, reencrypt-wave, verify-and-attest]
+      wave:
+        description: Rollout wave (reencrypt-wave only)
+        type: string
+        default: "1"
+      change_ticket:
+        description: Change ticket (required for reencrypt-wave)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crypto-migration
+  cancel-in-progress: false
+
+env:
+  CRYPTOMIGRATE_ACTOR: "github:${{ github.actor }} run ${{ github.run_id }}"
+  NO_COLOR: "1"
+  EVIDENCE: ${{ vars.CRYPTOMIGRATE_ARTIFACTS || 'artifacts' }}
+
+jobs:
+  status:
+    if: inputs.stage == 'status'
+    runs-on: [self-hosted, cryptomigrate]
+    environment: migration-test
+    env:
+      CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
+      - run: cryptomigrate status | tee -a "$GITHUB_STEP_SUMMARY"
+
+  discovery:
+    if: inputs.stage == 'discover-assess-plan'
+    runs-on: [self-hosted, cryptomigrate]
+    environment: migration-test
+    env:
+      CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
+      - run: cryptomigrate discover
+      - run: cryptomigrate assess
+      - run: cryptomigrate plan
+      - name: Phase 2 gate (report; passes once owners sign off)
+        run: cryptomigrate gate --phase 2 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discovery-${{ github.run_id }}
+          path: ${{ env.EVIDENCE }}
+
+  validation:
+    if: inputs.stage == 'validate-and-dry-run'
+    runs-on: [self-hosted, cryptomigrate]
+    environment: migration-test
+    env:
+      CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
+      - name: Entry criteria (Phase 4 gate)
+        run: cryptomigrate gate --phase 4
+      - run: cryptomigrate validate
+      - name: Full dry run of every data source
+        run: cryptomigrate reencrypt
+      - name: Phase 5 gate (report; passes once UAT is signed off)
+        run: cryptomigrate gate --phase 5 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ github.run_id }}
+          path: ${{ env.EVIDENCE }}
+
+  reencrypt:
+    if: inputs.stage == 'reencrypt-wave'
+    runs-on: [self-hosted, cryptomigrate]
+    environment: production            # waits for the required reviewers = change approval (Phase 6)
+    env:
+      CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
+      - name: Entry criteria (Phase 5 gate must pass)
+        run: cryptomigrate gate --phase 5
+      - name: Re-encrypt wave
+        env:
+          WAVE: ${{ inputs.wave }}
+          CHANGE_TICKET: ${{ inputs.change_ticket }}
+          REQUESTER: ${{ github.actor }}
+        run: |
+          if [ -z "$CHANGE_TICKET" ]; then echo "::error::change_ticket is required"; exit 1; fi
+          cryptomigrate reencrypt --wave "$WAVE" --apply --change-ticket "$CHANGE_TICKET" --approver "$REQUESTER"
+      - name: Refresh inventory
+        run: cryptomigrate discover && cryptomigrate assess
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wave-${{ inputs.wave }}-${{ github.run_id }}
+          path: ${{ env.EVIDENCE }}
+
+  closeout:
+    if: inputs.stage == 'verify-and-attest'
+    runs-on: [self-hosted, cryptomigrate]
+    environment: production
+    env:
+      CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
+      - run: cryptomigrate discover && cryptomigrate assess
+      - name: Entry criteria (Phase 6 gate must pass)
+        run: cryptomigrate gate --phase 6
+      - run: cryptomigrate verify
+      - run: cryptomigrate attest
+      - name: Phase 7 gate (report; needs key destruction, strict mode, sponsor sign-off)
+        run: cryptomigrate gate --phase 7 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: closeout-${{ github.run_id }}
+          path: ${{ env.EVIDENCE }}

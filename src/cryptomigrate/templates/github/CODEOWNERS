@@ -1,0 +1,5 @@
+# Cryptographic and governance changes need security review (workplan RACI: CISO accountable for design).
+*                        @[org]/[application-team]
+/migration.yaml          @[org]/security-team @[org]/pmo
+/.cryptomigrateignore    @[org]/security-team
+/.github/workflows/      @[org]/security-team

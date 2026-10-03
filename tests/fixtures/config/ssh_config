@@ -1,0 +1,2 @@
+Host *
+    Ciphers -3des-cbc

@@ -1,0 +1,504 @@
+# =============================================================================
+# Policy pack: DES / Triple-DES (TDEA) -> AES-GCM
+# -----------------------------------------------------------------------------
+# A policy pack is everything algorithm-specific in cryptomigrate. To run a
+# different migration (e.g. SHA-1 -> SHA-256), copy this file, change the
+# algorithms/normalization/rules, and point `policy:` in migration.yaml at it.
+#
+# Rule fields
+#   files       globs matched against the file name and the repo-relative path
+#   pattern     Python `re` regex. Named groups starting with `alg` capture the
+#               algorithm name; groups starting with `mode` capture the mode.
+#               Inline flags such as (?i) must come first.
+#   algorithm   default algorithm when no `alg` group matched
+#   severity    a level, or a map {ALGORITHM: level}
+#   validator   optional post-match check (see discovery/ciphers.py)
+#   fix         optional automatic fixer; `fix_files` limits where it may run
+#   synthetic   rule emitted by probes/profilers rather than by regex
+# =============================================================================
+id: des-to-aes
+name: "DES / Triple-DES (TDEA) to AES-GCM"
+version: "1.0.0"
+description: >-
+  Detects DES and Triple-DES (TDEA/3DES) in source code, configuration, network
+  endpoints and data at rest, and drives their replacement with authenticated
+  AES-GCM (FIPS 197 + NIST SP 800-38D).
+target_algorithm: AES-256-GCM
+legacy_algorithms: [DES, 3DES]
+
+normalization:            # first matching entry wins; markers match the lower-cased alphanumeric name
+  - algorithm: 3DES
+    markers: [desede, tripledes, triple, 3des, des3, tdea, tdes, ede3, ede2, ecb3, ede]
+  - algorithm: DES
+    markers: [des]
+
+algorithms:
+  DES:
+    display: "DES (single DES, FIPS 46-3)"
+    oid: "1.3.14.3.2.7"
+    primitive: block-cipher
+    block_bits: 64
+    key_bits: 56
+    classical_security_bits: 56
+    nist_quantum_security_level: 0
+    status: {encrypt: disallowed, decrypt: legacy-use}
+    status_note: "FIPS 46-3 was withdrawn in 2005; a 56-bit key is exhaustively searchable."
+  3DES:
+    display: "Triple-DES / TDEA (NIST SP 800-67)"
+    oid: "1.2.840.113549.3.7"
+    primitive: block-cipher
+    block_bits: 64
+    key_bits: 168
+    classical_security_bits: 112
+    nist_quantum_security_level: 0
+    status: {encrypt: disallowed, decrypt: legacy-use}
+    status_note: >-
+      SP 800-131A Rev. 2: 2-key TDEA encryption disallowed since 2015; 3-key TDEA
+      encryption disallowed after 2023-12-31; decryption allowed for legacy use only.
+      SP 800-67 Rev. 2 was withdrawn on 2024-01-01. The 64-bit block makes long
+      sessions vulnerable to birthday attacks (Sweet32, CVE-2016-2183).
+  AES-128-GCM:
+    display: "AES-128-GCM"
+    oid: "2.16.840.1.101.3.4.1.6"
+    primitive: ae
+    block_bits: 128
+    key_bits: 128
+    classical_security_bits: 128
+    nist_quantum_security_level: 1
+    status: {encrypt: acceptable, decrypt: acceptable}
+  AES-256-GCM:
+    display: "AES-256-GCM"
+    oid: "2.16.840.1.101.3.4.1.46"
+    primitive: ae
+    block_bits: 128
+    key_bits: 256
+    classical_security_bits: 256
+    nist_quantum_security_level: 5
+    status: {encrypt: acceptable, decrypt: acceptable}
+
+compliance:
+  NIST-SP-800-131A:
+    title: "NIST SP 800-131A Rev. 2 (Rev. 3 in draft)"
+    requirement: >-
+      DES/TDEA may not be used to apply cryptographic protection; TDEA decryption is
+      permitted only to process already-protected data (legacy use). The Rev. 3 draft
+      also proposes retiring ECB as a confidentiality mode and a 128-bit minimum
+      security strength after 2030 - the AES-GCM target satisfies both.
+    controls: ["Table 1 (block cipher encryption/decryption)"]
+  NIST-SP-800-53:
+    title: "NIST SP 800-53 Rev. 5"
+    requirement: "Cryptographic protection and key management controls."
+    controls: [SC-8, SC-12, SC-13, SC-28, CM-8, AU-9]
+  PCI-DSS-4.0:
+    title: "PCI DSS v4.0.1"
+    requirement: >-
+      Strong cryptography means at least 112 bits of effective key strength - single DES
+      and 2-key TDEA fail it, and PCI SSC recommends disallowing TDEA cipher suites in
+      favour of AES. Req. 12.3.3 requires a documented, annually reviewed inventory of
+      cipher suites and protocols in use.
+    controls: ["3.5.1", "3.6.1", "3.7", "4.2.1", "12.3.3"]
+  HIPAA:
+    title: "HIPAA Security Rule (45 CFR 164.312)"
+    requirement: "Encryption of ePHI at rest and in transit (addressable safeguards)."
+    controls: ["164.312(a)(2)(iv)", "164.312(e)(2)(ii)"]
+  ISO-27001:
+    title: "ISO/IEC 27001:2022"
+    requirement: "Rules for the effective use of cryptography, including key management."
+    controls: [A.8.24]
+  NIST-CSF-2.0:
+    title: "NIST Cybersecurity Framework 2.0"
+    requirement: "Data inventories maintained; data at rest and in transit protected."
+    controls: [ID.AM-07, PR.DS-01, PR.DS-02]
+  OWASP-ASVS:
+    title: "OWASP ASVS 4.0.3"
+    requirement: "Ciphers with small block sizes (e.g. Triple-DES) and insecure modes (ECB) are not used."
+    controls: [V6.2.5]
+
+rules:
+  # ------------------------------------------------------------- source code
+  - id: CM-JAVA-001
+    title: "JCA/JCE Cipher instantiated with DES or Triple-DES"
+    category: source
+    files: ["*.java", "*.kt", "*.kts", "*.scala", "*.groovy", "*.clj"]
+    pattern: '(?i)Cipher\.getInstance\(\s*"(?P<alg>DESede|TripleDES|DES)(?:/(?P<mode>[A-Za-z0-9]+))?(?:/[A-Za-z0-9]+)?"'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: >-
+      Use Cipher.getInstance("AES/GCM/NoPadding") with a 256-bit key from your KMS and a fresh
+      96-bit IV per message stored with the ciphertext (or the cryptomigrate v2 envelope).
+      A bare "DESede" transformation defaults to ECB/PKCS5Padding in the SunJCE provider.
+
+  - id: CM-JAVA-002
+    title: "JCA/JCE DES or Triple-DES key material / PBE scheme"
+    category: source
+    files: ["*.java", "*.kt", "*.kts", "*.scala", "*.groovy"]
+    pattern: '(?i)\b(?P<alg>DESedeKeySpec|DESKeySpec)\b|(?:SecretKeyFactory|KeyGenerator)\.getInstance\(\s*"(?P<alg2>DESede|TripleDES|DES)"|"(?P<alg3>PBEWith(?:SHA1|MD5)And(?:DESede|TripleDES|DES))"'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327, CWE-326]
+    remediation: >-
+      Generate 256-bit AES keys (KeyGenerator.getInstance("AES") / your KMS). Replace PBE-with-DES
+      schemes with PBKDF2WithHmacSHA256 (>= 600,000 iterations) feeding AES-GCM.
+
+  - id: CM-PY-001
+    title: "PyCryptodome / PyCrypto DES or DES3 cipher"
+    category: source
+    files: ["*.py", "*.pyw", "*.ipynb"]
+    pattern: '\b(?P<alg>DES3|DES)\.new\s*\((?:[^\n)]*?MODE_(?P<mode>[A-Z]+))?|from\s+Crypto(?:dome)?\.Cipher\s+import\s+[^\n]*?\b(?P<alg2>DES3|DES)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: >-
+      Replace with AES.new(key, AES.MODE_GCM) (PyCryptodome) or AESGCM (pyca/cryptography), or call
+      cryptomigrate.CryptoService.encrypt(), which emits a versioned AES-GCM envelope.
+
+  - id: CM-PY-002
+    title: "pyca/cryptography TripleDES"
+    category: source
+    files: ["*.py", "*.pyw", "*.ipynb"]
+    pattern: '\b(?P<alg>TripleDES)\s*\((?:[^\n]*?modes\.(?P<mode>CBC|ECB|CFB8|CFB|OFB|CTR))?|\bimport\s[^\n]*\bTripleDES\b'
+    algorithm: 3DES
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: >-
+      Use cryptography.hazmat.primitives.ciphers.aead.AESGCM. TripleDES now lives in the library's
+      "decrepit" namespace precisely because it should only be used to read legacy data.
+
+  - id: CM-PY-003
+    title: "pyDes (pure-Python DES / Triple-DES)"
+    category: source
+    files: ["*.py", "*.pyw"]
+    pattern: '\bpyDes\.(?P<alg>triple_des|des)\s*\((?:[^\n)]*?pyDes\.(?P<mode>CBC|ECB))?|\bfrom\s+pyDes\s+import\b|\bimport\s+pyDes\b'
+    algorithm: 3DES
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Remove the pyDes dependency; use AES-GCM from pyca/cryptography or the cryptomigrate CryptoService."
+
+  - id: CM-NET-001
+    title: ".NET DES / TripleDES provider"
+    category: source
+    files: ["*.cs", "*.vb", "*.fs", "*.cshtml", "*.ps1", "*.psm1"]
+    pattern: '\b(?P<alg>TripleDES|DES)\.Create\s*\(|\bnew\s+(?P<alg2>TripleDESCryptoServiceProvider|DESCryptoServiceProvider|TripleDESCng)\s*\(|\[(?:System\.Security\.Cryptography\.)?(?P<alg3>TripleDES|DES)\]::Create\(|New-Object\s+(?:System\.Security\.Cryptography\.)?(?P<alg4>TripleDESCryptoServiceProvider|DESCryptoServiceProvider)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use System.Security.Cryptography.AesGcm with a 256-bit key and a unique 12-byte nonce per message."
+
+  - id: CM-GO-001
+    title: "Go crypto/des cipher"
+    category: source
+    files: ["*.go"]
+    pattern: '\b(?P<alg>des\.NewTripleDESCipher|des\.NewCipher)\s*\('
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use crypto/aes with cipher.NewGCM; never reuse a nonce under the same key."
+
+  - id: CM-JS-001
+    title: "Node.js crypto with a DES-family cipher"
+    category: source
+    files: ["*.js", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.jsx"]
+    pattern: '(?i)\bcreate(?:Cipheriv|Decipheriv|Cipher|Decipher)\s*\(\s*[''"`](?P<alg>des(?:-ede3?|3)?(?:-(?:cbc|ecb|cfb1?|cfb8|ofb))?)[''"`]'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use crypto.createCipheriv('aes-256-gcm', key, iv) and persist cipher.getAuthTag() with the ciphertext."
+
+  - id: CM-JS-002
+    title: "CryptoJS DES / TripleDES"
+    category: source
+    files: ["*.js", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.jsx", "*.html", "*.vue", "*.svelte"]
+    pattern: '\bCryptoJS\.(?P<alg>TripleDES|DES)\.(?:encrypt|decrypt)\s*\('
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Move encryption server-side or to WebCrypto (SubtleCrypto.encrypt with AES-GCM)."
+
+  - id: CM-C-001
+    title: "OpenSSL / libcrypto DES API"
+    category: source
+    files: ["*.c", "*.h", "*.cc", "*.cpp", "*.cxx", "*.hpp", "*.hh", "*.m", "*.mm"]
+    pattern: '\bEVP_(?P<alg>des_[a-z0-9_]+)\s*\(|\b(?P<alg2>DES_ecb3_encrypt|DES_ede3_cbc_encrypt|DES_ede2_cbc_encrypt|DES_ede3_cfb64_encrypt|DES_ede3_ofb64_encrypt|DES_ecb_encrypt|DES_cbc_encrypt|DES_ncbc_encrypt|DES_cfb64_encrypt|DES_ofb64_encrypt|DES_set_key(?:_checked|_unchecked)?|DES_key_sched)\s*\(|\bEVP_get_cipherbyname\s*\(\s*"(?P<alg3>des[-a-z0-9]*)"'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use EVP_aes_256_gcm() via the EVP_EncryptInit_ex/EVP_CIPHER_CTX_ctrl(GCM_GET_TAG) API."
+
+  - id: CM-WIN-001
+    title: "Windows CryptoAPI / CNG DES identifier"
+    category: source
+    files: ["*.c", "*.h", "*.cpp", "*.hpp", "*.cs", "*.vb", "*.pas", "*.dpr"]
+    pattern: '\b(?P<alg>CALG_3DES_112|CALG_3DES|CALG_DESX|CALG_DES|BCRYPT_3DES_112_ALGORITHM|BCRYPT_3DES_ALGORITHM|BCRYPT_DESX_ALGORITHM|BCRYPT_DES_ALGORITHM)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use BCRYPT_AES_ALGORITHM with BCRYPT_CHAIN_MODE_GCM."
+
+  - id: CM-PHP-001
+    title: "PHP openssl / mcrypt DES-family cipher"
+    category: source
+    files: ["*.php", "*.phtml", "*.inc"]
+    pattern: '(?i)\bopenssl_(?:encrypt|decrypt)\s*\([^\n]*?[''"](?P<alg>des(?:-ede3?|3)?(?:-(?:cbc|ecb|cfb1?|cfb8|ofb))?)[''"]|\bMCRYPT_(?P<alg2>3DES|TRIPLEDES|DES)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use openssl_encrypt($data, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag); mcrypt is removed since PHP 7.2."
+
+  - id: CM-RUBY-001
+    title: "Ruby OpenSSL DES-family cipher"
+    category: source
+    files: ["*.rb", "*.erb", "*.rake"]
+    pattern: '(?i)OpenSSL::Cipher(?:::Cipher)?\.new\(\s*[''"](?P<alg>des(?:-ede3?|3)?(?:-(?:cbc|ecb|cfb1?|cfb8|ofb))?)[''"]|OpenSSL::Cipher::(?P<alg2>DES(?:\.new\(\s*:EDE3?)?)'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use OpenSSL::Cipher.new('aes-256-gcm') and store auth_tag alongside the ciphertext."
+
+  - id: CM-RUST-001
+    title: "Rust RustCrypto des crate"
+    category: source
+    files: ["*.rs"]
+    pattern: '\bdes::(?P<alg>TdesEde3|TdesEde2|TdesEee3|TdesEee2|Des)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use the aes-gcm crate (Aes256Gcm) with a unique 96-bit nonce per message."
+
+  - id: CM-SQL-001
+    title: "Database-native DES / TDEA encryption"
+    category: source
+    files: ["*.sql", "*.pls", "*.pks", "*.pkb", "*.prc", "*.fnc", "*.trg", "*.ddl", "*.java", "*.cs", "*.py", "*.php", "*.rb", "*.go", "*.js", "*.ts"]
+    pattern: '(?i)\bDBMS_CRYPTO\.(?:ENCRYPT|DECRYPT)_(?P<alg>3DES_2KEY|3DES|DES)\b|\bDBMS_CRYPTO\.(?P<alg2>DES3?_(?:CBC|ECB)_PKCS5)\b|\bDBMS_OBFUSCATION_TOOLKIT\.(?P<alg3>DES3Encrypt|DES3Decrypt|DESEncrypt|DESDecrypt)\b|\bALGORITHM\s*=\s*(?P<alg4>TRIPLE_DES_3KEY|TRIPLE_DES|DESX|DES)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: >-
+      Oracle: DBMS_CRYPTO.ENCRYPT_AES256 + CHAIN_CBC/PAD_PKCS5 at minimum (prefer application-layer
+      AES-GCM or TDE). SQL Server: CREATE SYMMETRIC KEY ... WITH ALGORITHM = AES_256.
+
+  - id: CM-SQL-002
+    title: "MySQL DES_ENCRYPT()/DES_DECRYPT() (Triple-DES; removed in MySQL 8.0)"
+    category: source
+    files: ["*.sql", "*.ddl", "*.java", "*.cs", "*.py", "*.php", "*.rb", "*.go", "*.js", "*.ts"]
+    pattern: '(?i)\b(?:DES_ENCRYPT|DES_DECRYPT)\s*\('
+    algorithm: 3DES
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Decrypt once with DES_DECRYPT during migration and re-encrypt at the application layer with AES-GCM."
+
+  # ----------------------------------------------------------- configuration
+  - id: CM-TLS-001
+    title: "TLS cipher list enables DES/3DES suites (OpenSSL syntax)"
+    category: config
+    files: ["*.conf", "*.cnf", "*.cfg", "*.config", "*.vhost", "*.inc", "*.ini", "nginx*", "httpd*", "apache2*", "haproxy*", "my.cnf"]
+    pattern: '(?im)^[ \t]*(?P<directive>ssl_ciphers|ssl_cipher_list|SSLCipherSuite|SSLProxyCipherSuite|ssl-default-bind-ciphers|ssl-default-server-ciphers|CipherString|tls_high_cipherlist|tls_medium_cipherlist|ssl_cipher|ssl-cipher)\b[ \t]*[=:]?[ \t]*(?P<value>[^\n;#]+)'
+    validator: openssl-cipher-list
+    fix: openssl-cipher-list
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327, CWE-326]
+    cve: [CVE-2016-2183]
+    remediation: >-
+      Remove DES/3DES suites and append !3DES:!DES (e.g. ECDHE+AESGCM:ECDHE+CHACHA20:!aNULL:!3DES:!DES).
+      Automatable: `cryptomigrate remediate --apply`.
+
+  - id: CM-TLS-002
+    title: "TLS/SSL cipher suite (IANA name) using DES/3DES"
+    category: config
+    files: ["*.xml", "*.properties", "*.conf", "*.config", "*.yaml", "*.yml", "*.json", "*.toml", "*.ini", "*.env", "*.ps1", "*.psm1", "*.java", "*.cs", "*.go", "*.py", "*.js", "*.ts", "*.kt", "*.rb"]
+    pattern: '\b(?:TLS|SSL)_[A-Za-z0-9_]*?WITH_(?P<alg>3DES_EDE_CBC|DES_CBC|DES40_CBC|DES_CBC_40)_[A-Z0-9_]+\b'
+    validator: iana-suite
+    fix: iana-cipher-list
+    fix_files: ["*.xml", "*.properties", "*.conf", "*.config", "*.yaml", "*.yml", "*.ini", "*.env", "*.toml"]
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    cve: [CVE-2016-2183]
+    remediation: "Replace with TLS_ECDHE_*_WITH_AES_*_GCM_* suites (TLS 1.2) and enable TLS 1.3."
+
+  - id: CM-SSH-001
+    title: "SSH configuration enables DES/3DES ciphers"
+    category: config
+    files: ["sshd_config", "ssh_config", "*sshd_config*", "*ssh_config*"]
+    pattern: '(?im)^[ \t]*Ciphers[ \t]+(?P<value>[^\n#]+)'
+    validator: ssh-cipher-list
+    fix: ssh-cipher-list
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use Ciphers aes256-gcm@openssh.com,aes128-gcm@openssh.com,chacha20-poly1305@openssh.com. Automatable."
+
+  - id: CM-IPSEC-001
+    title: "IPsec/IKE proposal uses DES/3DES"
+    category: config
+    files: ["ipsec*.conf", "swanctl*.conf", "*.swanctl", "*ipsec.d/*", "*swanctl/conf.d/*", "*strongswan*"]
+    pattern: '(?im)^[ \t]*(?:ike|esp|ah|phase2alg|phase1alg|proposals|esp_proposals|ike_proposals)[ \t]*=[ \t]*[^\n#]*?\b(?P<alg>3des|des)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: >-
+      Coordinate with every peer, then move to AES-GCM proposals (e.g. ike=aes256gcm16-prfsha384-ecp384,
+      esp=aes256gcm16-ecp384). Never auto-applied: changing one side of a proposal drops the tunnel.
+
+  - id: CM-NETDEV-001
+    title: "Network device crypto policy uses DES/3DES (IOS/ASA/Junos style)"
+    category: config
+    files: ["*.cfg", "*.ios", "*.asa", "*.junos", "*running-config*", "*startup-config*"]
+    pattern: '(?im)^[ \t]*(?:encryption[ \t]+(?P<alg>3des|des)\b|crypto[ \t]+ipsec[ \t]+(?:ikev1[ \t]+)?transform-set[ \t]+\S+[ \t]+[^\n]*?\b(?P<alg2>esp-3des|esp-des)\b|snmp-server[ \t]+user[ \t]+[^\n]*?\bpriv[ \t]+(?P<alg3>3des|des56|des)\b|encryption-algorithm[ \t]+(?P<alg4>3des-cbc|des-cbc))'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Schedule a coordinated change to AES-256 (IKEv2 + esp-aes 256 / esp-gcm 256, SNMPv3 priv aes 256)."
+
+  - id: CM-KRB-001
+    title: "Kerberos permits DES/3DES encryption types"
+    category: config
+    files: ["krb5.conf", "*krb5*.conf", "kdc.conf", "*.krb5"]
+    pattern: '(?im)^[ \t]*(?:default_tkt_enctypes|default_tgs_enctypes|permitted_enctypes|supported_enctypes|master_key_type)[ \t]*=[ \t]*[^\n#]*?\b(?P<alg>des3-cbc-sha1-kd|des3-cbc-sha1|des3-hmac-sha1|des3-cbc-raw|des-cbc-crc|des-cbc-md5|des-cbc-md4|des-cbc-raw|des-hmac-sha1|des3|des)\b|^[ \t]*allow_weak_crypto[ \t]*=[ \t]*(?:true|yes|1)\b'
+    algorithm: DES
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Restrict enctypes to aes256-cts-hmac-sha384-192 / aes256-cts-hmac-sha1-96, re-key principals, set allow_weak_crypto = false."
+
+  - id: CM-SNMP-001
+    title: "SNMPv3 privacy protocol DES/3DES"
+    category: config
+    files: ["snmpd.conf", "snmp.conf", "*snmp*.conf", "*.sh", "*.bash"]
+    pattern: '(?im)^[ \t]*createUser[ \t]+\S+[ \t]+\S+[ \t]+\S+[ \t]+(?P<alg>3DES|DES)\b|\bsnmp\w*\b[^\n]*?[ \t]-x[ \t]+(?P<alg2>3DES|DES)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: medium
+    cwe: [CWE-327]
+    remediation: "Use SNMPv3 with AES-128/256 privacy (createUser <u> SHA-256 <auth> AES <priv>); update every poller."
+
+  - id: CM-PGP-001
+    title: "OpenPGP / GnuPG configured to use 3DES"
+    category: config
+    files: ["gpg.conf", "*gpg*.conf"]
+    pattern: '(?im)^[ \t]*(?:cipher-algo|s2k-cipher-algo|personal-cipher-preferences|default-preference-list)\b[^\n#]*?\b(?P<alg>3DES|TRIPLEDES|DES)\b'
+    severity: {DES: high, 3DES: medium}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use cipher-algo AES256 and personal-cipher-preferences AES256 AES192 AES."
+
+  - id: CM-WINREG-001
+    title: "Windows SCHANNEL Triple-DES/DES cipher enabled (registry export)"
+    category: config
+    files: ["*.reg"]
+    pattern: '(?is)SCHANNEL\\Ciphers\\(?P<alg>Triple DES 168(?:/168)?|DES 56/56)\][^\[]*?"Enabled"=dword:(?!00000000)[0-9a-fA-F]{8}'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    cve: [CVE-2016-2183]
+    remediation: 'Set "Enabled"=dword:00000000 for the SCHANNEL\Ciphers\Triple DES 168 key (or via Group Policy / IIS Crypto).'
+
+  - id: CM-XML-001
+    title: "W3C XML Encryption with Triple-DES (SAML / WS-Security)"
+    category: config
+    files: ["*.xml", "*.config", "*.wsdl", "*.saml", "*.properties", "*.yaml", "*.yml", "*.json", "*.java", "*.cs", "*.py", "*.js", "*.ts"]
+    pattern: 'xmlenc#(?P<alg>tripledes-cbc|kw-tripledes)'
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use http://www.w3.org/2009/xmlenc11#aes256-gcm for data and xmlenc#kw-aes256 (or RSA-OAEP) for key transport."
+
+  - id: CM-PKCS12-001
+    title: "OpenSSL CLI / PKCS#12 using DES or 3DES (keys, PKCS#12, S/MIME)"
+    category: config
+    files: ["*.sh", "*.bash", "*.ps1", "*.py", "*.conf", "*.cnf", "*.yml", "*.yaml", "Makefile", "Dockerfile", "*.mk", "*.java", "*.cs"]
+    pattern: '(?i)\b(?P<alg>pbeWithSHAAnd(?:3|2)-?KeyTripleDES-CBC|PBE-SHA1-3DES|PBE-SHA1-2DES)\b|\bopenssl\s+[a-z0-9]+\b[^\n]*?[ \t]-(?P<alg2>des3|des-ede3-cbc|des-ede3|des-cbc|des)\b'
+    severity: {DES: high, 3DES: medium}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Use -aes256 for PEM keys and -keypbe AES-256-CBC -certpbe AES-256-CBC -macalg sha256 for PKCS#12."
+
+  - id: CM-GEN-001
+    title: "Application setting selects DES/3DES"
+    category: config
+    files: ["*.properties", "*.yaml", "*.yml", "*.json", "*.ini", "*.cfg", "*.conf", "*.env", "*.toml", "*.xml", "*.config", ".env*"]
+    pattern: '(?i)[\w.\-]*(?:cipher|algorithm|algo|encryption|crypt|transformation)[\w.\-]*[''"]?[ \t]*[:=][ \t]*[''"]?(?P<alg>3DES|TripleDES|Triple_DES|Triple-DES|DESede|TDEA|TDES|DES3|DES)(?:[/_\-](?P<mode>CBC|ECB|CFB|OFB))?(?![\w-])'
+    severity: {DES: high, 3DES: medium}
+    confidence: medium
+    cwe: [CWE-327]
+    remediation: "Change the setting to AES-256-GCM and confirm the consuming code path supports it (dual-mode decrypt during transition)."
+
+  - id: CM-CMS-001
+    title: "CMS / S-MIME content encryption with DES or Triple-DES (hybrid RSA + 3DES)"
+    category: source
+    files: ["*.java", "*.kt", "*.scala", "*.groovy", "*.cs", "*.vb"]
+    pattern: '\b(?:CMSAlgorithm|SMIMEEnvelopedGenerator|CMSEnvelopedGenerator)\.(?P<alg>DES_EDE3_CBC|DES_CBC)\b|\bnew\s+(?P<alg2>EnvelopedCms)\s*\(\s*\w+\s*\)'
+    algorithm: 3DES
+    severity: {DES: critical, 3DES: high}
+    confidence: medium
+    cwe: [CWE-327]
+    remediation: >-
+      Encrypt CMS / S/MIME content with AES-GCM (RFC 5084, S/MIME 4.0 RFC 8551) or at least AES-CBC and keep
+      RSA-OAEP key transport. In .NET pass an explicit AlgorithmIdentifier (AES-256-CBC, OID 2.16.840.1.101.3.4.1.42):
+      the single-argument EnvelopedCms constructor defaults to 3DES on .NET Framework.
+
+  - id: CM-OID-001
+    title: "Triple-DES algorithm identifier (OID 1.2.840.113549.3.7)"
+    category: source
+    files: ["*.java", "*.kt", "*.cs", "*.vb", "*.py", "*.go", "*.js", "*.ts", "*.c", "*.cpp", "*.h", "*.rb", "*.php", "*.xml", "*.json", "*.yaml", "*.yml", "*.properties"]
+    pattern: '["'']1\.2\.840\.113549\.3\.7["'']'
+    algorithm: 3DES
+    severity: high
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Replace with an AES identifier (id-aes256-GCM 2.16.840.1.101.3.4.1.46 or id-aes256-CBC 2.16.840.1.101.3.4.1.42)."
+
+  - id: CM-OID-002
+    title: "DES algorithm identifier (OID 1.3.14.3.2.7)"
+    category: source
+    files: ["*.java", "*.kt", "*.cs", "*.vb", "*.py", "*.go", "*.js", "*.ts", "*.c", "*.cpp", "*.h", "*.rb", "*.php", "*.xml", "*.json", "*.yaml", "*.yml", "*.properties"]
+    pattern: '["'']1\.3\.14\.3\.2\.7["'']'
+    algorithm: DES
+    severity: critical
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Replace with an AES identifier (id-aes256-GCM 2.16.840.1.101.3.4.1.46)."
+
+  - id: CM-PEM-001
+    title: "PEM private key encrypted with DES or Triple-DES"
+    category: config
+    files: ["*.pem", "*.key", "*.crt", "*.txt", "*.conf", "*.yml", "*.yaml", "*.json", "*.env"]
+    pattern: 'DEK-Info:\s*(?P<alg>DES-EDE3-CBC|DES-EDE-CBC|DES-CBC)\b'
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327, CWE-321]
+    remediation: >-
+      Re-encrypt the key with AES-256 (openssl pkey -in old.pem -aes256 -out new.pem) or, better, move it into an
+      HSM/KMS; rotate it if the old file was ever shared or committed.
+
+  # ------------------------------------------------- probes / profilers / manual
+  - id: CM-PROBE-TLS-001
+    title: "TLS endpoint negotiates a DES/3DES cipher suite"
+    category: protocol
+    synthetic: true
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    cve: [CVE-2016-2183]
+    remediation: "Remove DES/3DES suites from the endpoint (or its load balancer / TLS terminator) and re-probe."
+
+  - id: CM-DATA-001
+    title: "Data at rest protected with a legacy 64-bit block cipher"
+    category: data
+    synthetic: true
+    severity: {DES: critical, 3DES: high}
+    confidence: medium
+    cwe: [CWE-327]
+    remediation: "Re-encrypt with `cryptomigrate reencrypt --source <name>` (dry-run first, then --apply)."
+
+  - id: CM-MANUAL-001
+    title: "Manually inventoried asset uses DES/3DES (HSM, embedded, third-party)"
+    category: manual
+    synthetic: true
+    severity: {DES: critical, 3DES: high}
+    confidence: high
+    cwe: [CWE-327]
+    remediation: "Confirm AES support (firmware/licence), plan hardware refresh or contractual vendor remediation."

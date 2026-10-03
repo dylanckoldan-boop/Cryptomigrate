@@ -1,0 +1,45 @@
+# This repository's own crypto gate: the toolkit must pass the policy it enforces.
+# Legitimate legacy references (decrypt-only module, probe suite table) carry justified suppressions.
+name: Crypto gate (DES/3DES)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crypto-inventory:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install .
+      - name: Discover DES/3DES (fails on high or critical)
+        run: cryptomigrate discover . --no-data --no-tls --layers pki-tls,auth-wireless,secure-coding --out crypto-artifacts --fail-on high
+      - name: Upload SARIF to code scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: crypto-artifacts/cryptomigrate.sarif
+          category: cryptomigrate
+      - name: Upload inventory and CBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-inventory
+          path: crypto-artifacts/
+      - name: Job summary
+        if: always()
+        run: cat crypto-artifacts/inventory.md >> "$GITHUB_STEP_SUMMARY"

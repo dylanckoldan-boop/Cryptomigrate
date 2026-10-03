@@ -1,0 +1,41 @@
+name: Exception / risk acceptance request
+description: Request a time-boxed exception for a DES/3DES finding that cannot be remediated yet
+title: "[Exception] "
+labels: ["exception-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Exceptions are temporary. Once approved, add the entry to `governance.exceptions` in
+        `migration.yaml` by pull request. Expired exceptions fail the phase gates automatically.
+  - type: input
+    id: finding
+    attributes:
+      label: Finding fingerprint, or rule id + path glob
+      placeholder: "CM-JAVA-001 vendor/payment-sdk/**"
+    validations:
+      required: true
+  - type: textarea
+    id: justification
+    attributes:
+      label: Business justification
+    validations:
+      required: true
+  - type: textarea
+    id: compensating
+    attributes:
+      label: Compensating controls while the exception is open
+    validations:
+      required: true
+  - type: input
+    id: expires
+    attributes:
+      label: Expiry date (YYYY-MM-DD)
+    validations:
+      required: true
+  - type: input
+    id: approver
+    attributes:
+      label: Approver (risk owner / CISO)
+    validations:
+      required: true

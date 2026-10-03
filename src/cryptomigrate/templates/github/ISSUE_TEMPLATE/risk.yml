@@ -1,0 +1,44 @@
+name: Risk register item
+description: Log a migration risk (extends the workplan risk register R-01..R-07)
+title: "[Risk] "
+labels: ["risk"]
+body:
+  - type: input
+    id: risk-id
+    attributes:
+      label: Risk ID
+      placeholder: R-08
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Risk description
+    validations:
+      required: true
+  - type: dropdown
+    id: likelihood
+    attributes:
+      label: Likelihood
+      options: [Low, Medium, High]
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options: [Low, Medium, High]
+    validations:
+      required: true
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Mitigation
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Risk owner
+    validations:
+      required: true

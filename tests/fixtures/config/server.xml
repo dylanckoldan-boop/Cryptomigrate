@@ -1,0 +1,4 @@
+<Server>
+  <Connector port="8443" SSLEnabled="true"
+             ciphers="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_3DES_EDE_CBC_SHA" />
+</Server>

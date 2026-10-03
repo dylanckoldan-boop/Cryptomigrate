@@ -1,0 +1,157 @@
+# =============================================================================
+# migration.yaml - cryptomigrate project configuration
+#
+# This file is BOTH the Phase 1 project charter and the technical configuration.
+# Replace every [placeholder]; `cryptomigrate gate --phase 1` fails until you do.
+# Change it through pull requests reviewed by CODEOWNERS: that review trail is
+# your evidence of approvals. NEVER put secrets here - use ${ENV_VAR} references.
+# =============================================================================
+
+# ---------------------------------------------------------------- Phase 1: charter
+project:
+  name: "[Project Name]"
+  organization: "[Organization Name]"
+  sponsor: "[Executive Sponsor]"
+  project_manager: "[Project Manager]"
+  security_lead: "[CISO / Security Lead]"
+  target_completion: "YYYY-MM-DD"
+  compliance_frameworks:            # keys from the policy pack's `compliance` section
+    - NIST-SP-800-131A
+    - PCI-DSS-4.0
+    # - HIPAA
+    # - ISO-27001
+
+policy: des-to-aes                  # built-in pack id, or a path to your own policy YAML
+
+# Security layers scanned alongside the migration (docs/SECURITY_LAYERS.md). Layer findings at or
+# above layer_fail_on block the Phase 4 and 6 gates and final verification.
+layers: [pki-tls, auth-wireless, secure-coding]
+layer_fail_on: high
+
+# ---------------------------------------------------------------- Phase 2: discovery
+scan:
+  paths: ["."]                      # repositories / config trees to scan
+  max_file_size_kb: 2048
+  tls_endpoints: []                 # extra "host:port" endpoints to probe (systems[].endpoints are added)
+  data_sample_size: 200             # values sampled per column during discovery
+  binaries: []                      # ELF binaries/directories to check for exploit mitigations (NX, PIE, RELRO...)
+  tls_ca_bundle: null               # CA bundle for verifying endpoints that use a private PKI
+  cert_expiry_warn_days: 30
+
+# Systems own findings. A finding whose path matches no system is an inventory gap.
+systems:
+  - id: "[system-id]"
+    name: "[System Name]"
+    owner: "[Application Owner]"
+    criticality: medium             # low | medium | high | critical  (drives rollout waves: low first)
+    data_classification: "[e.g. restricted]"
+    # wave: 1                       # optional explicit wave
+    paths: ["src/**", "config/**"]  # globs relative to this file; * also crosses directories
+    endpoints: []                   # e.g. ["app.internal.example:443"]
+
+# Assets no scanner can see (risk R-01/R-02/R-05): HSMs, embedded devices, vendor systems.
+manual_assets: []
+#  - name: "Payment HSM cluster"
+#    type: hsm                      # hsm | embedded | third-party | network-device | other
+#    system: "[system-id]"
+#    algorithm: 3DES
+#    mode: CBC
+#    aes_support: unknown           # yes | no | unknown | firmware-update
+#    status: open                   # open | remediated (owner-confirmed; link the evidence ticket in notes)
+#    owner: "[Owner]"
+#    notes: "PIN translation keys"
+
+# ---------------------------------------------------------------- Phase 3: design
+target:
+  algorithm: AES-256-GCM            # AES-256-GCM (recommended) | AES-128-GCM
+
+keystore:
+  path: .cryptomigrate/keystore.json  # wrapped keys; mode 0600; NEVER commit (crypto-shredding needs it)
+  kek_env: CRYPTOMIGRATE_KEK          # base64 32-byte KEK - from your secrets manager / HSM
+  kek_passphrase_env: CRYPTOMIGRATE_KEK_PASSPHRASE
+  wrap: aes-kwp                     # aes-kwp | rsa-aes-kwp (RSA-OAEP protects the AES keys - docs/KEY_MANAGEMENT.md)
+  # rsa_public_key: keys/kek-public.pem   # rsa-aes-kwp: public half (safe to commit); the private key file path
+  #                                       # comes from CRYPTOMIGRATE_KEK_RSA_PRIVATE_FILE (+ _RSA_PASSPHRASE)
+
+# How each legacy system stored its ciphertext. Getting this right is what makes the
+# automated migration possible - `cryptomigrate validate` proves it against real data.
+legacy_profiles:
+  legacy-3des:
+    algorithm: 3DES                 # DES | 3DES
+    mode: CBC                       # CBC | ECB
+    iv: prefix                      # prefix (IV stored before ciphertext) | fixed:<16 hex> | none (ECB)
+    padding: pkcs7                  # pkcs7 (= PKCS#5) | zero | none
+    encoding: base64                # base64 | hex | raw (binary columns/files)
+    key_id: legacy-3des             # import with: cryptomigrate keys import-legacy --key-id legacy-3des ...
+  # Hybrid systems (RSA protects a per-record content key): each value = RSA(3DES key) || IV || ciphertext.
+  # hybrid-rsa-3des:
+  #   algorithm: 3DES
+  #   mode: CBC
+  #   iv: prefix
+  #   padding: pkcs7
+  #   encoding: raw
+  #   key_transport: rsa-pkcs1v15     # rsa-oaep-sha256 | rsa-oaep-sha1 | rsa-pkcs1v15
+  #   rsa_key_bits: 2048
+  #   key_id: legacy-rsa              # keys import-legacy --key-id legacy-rsa --algorithm RSA --pem-file key.pem
+
+# Data encrypted at rest under a legacy profile.
+data_sources: []
+#  - name: customers-db
+#    system: "[system-id]"
+#    adapter: sql                   # sql (any DB-API 2.0 driver) | files
+#    driver: psycopg2               # sqlite3 | psycopg2 | pymysql | oracledb | pyodbc | ...
+#    connect: {host: db.internal, dbname: app, user: migrator, password: "${DB_PASSWORD}"}
+#    table: customers
+#    primary_key: id                # single-column, orderable (keyset pagination)
+#    columns:
+#      - {name: ssn_enc, legacy_profile: legacy-3des, storage: text, max_length: 255}
+#    aad: "{table}.{column}#{pk}"   # AES-GCM context binding; your app must pass the same context
+#    batch_size: 500
+#    throttle_ms: 0                 # pause between batches to protect production load
+#  - name: document-archive
+#    system: "[system-id]"
+#    adapter: files
+#    path: /srv/archive
+#    glob: "**/*.enc"
+#    legacy_profile: legacy-3des    # use an encoding: raw profile for binary files
+
+# ---------------------------------------------------------------- Phase 5/6: execution
+migration:
+  mode: dual                        # dual = apps decrypt legacy + v2 | strict = AES only (set at close-out)
+  backup: true                      # required for --apply (rollback path)
+  batch_size: 500
+  max_error_rate: 0.0               # abort an apply run if errors/scanned exceeds this
+  malware_scan:                     # scan decrypted files/BLOBs with ClamAV before re-encrypting them
+    enabled: false
+    clamd: unix:/var/run/clamav/clamd.ctl   # or tcp:127.0.0.1:3310
+    timeout_s: 30
+
+nfr:
+  max_latency_increase_pct: 10      # NFR-01 budget vs the 3DES baseline
+  benchmark_record_bytes: 256
+
+# ---------------------------------------------------------------- governance
+governance:
+  require_change_ticket: true       # NFR-04: --apply needs --change-ticket
+  max_artifact_age_days: 30         # gates reject stale evidence
+  dual_control: true                # key destruction needs two distinct approvers (governance.approvals)
+  require_signed_commits: false     # true = sign-offs count only if migration.yaml's last commit is signed
+  approvals: {}                     # e.g. key_destruction: [{by: "...", date: "...", ref: "..."}, {by: "...", ...}]
+  signoffs: {}                      # manual gate approvals, e.g.
+  #  charter:              {by: "Jane Doe (Sponsor)", date: "2026-10-01", ref: "https://github.com/org/repo/issues/1"}
+  #  inventory_validation: {by: "...", date: "...", ref: "..."}
+  #  design_review:        {by: "...", date: "...", ref: "..."}
+  #  code_review:          {by: "...", date: "...", ref: "..."}
+  #  uat:                  {by: "...", date: "...", ref: "..."}
+  #  change_approval:      {by: "...", date: "...", ref: "..."}
+  #  closeout:             {by: "...", date: "...", ref: "..."}
+  exceptions: []                    # time-boxed risk acceptances, e.g.
+  #  - id: EXC-001
+  #    rule: CM-JAVA-001
+  #    path: "vendor/payment-sdk/**"   # or fingerprint: <from inventory.json>
+  #    justification: "Vendor SDK; remediation contracted for Q3"
+  #    approved_by: "CISO"
+  #    expires: "2027-03-31"
+
+artifacts_dir: artifacts            # evidence (commit or upload as CI artifacts)
+state_dir: .cryptomigrate           # keystore, backups, audit log (never commit)

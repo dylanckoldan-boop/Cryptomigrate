@@ -1,0 +1,13 @@
+# .cryptomigrateignore - paths cryptomigrate must not scan (gitignore-style globs).
+# Everything excluded here is invisible to the inventory, so keep it short and justified.
+# Prefer inline `cryptomigrate: ignore=RULE -- justification` comments for single lines:
+# those stay visible to auditors as "suppressed" findings.
+
+# Third-party / generated code you do not own (track via manual_assets or SCA instead)
+vendor/
+third_party/
+node_modules/
+*.min.js
+
+# Test fixtures that intentionally contain legacy crypto
+tests/fixtures/

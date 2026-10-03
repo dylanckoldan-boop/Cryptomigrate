@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cryptomigrate"
+version = "1.1.0"
+description = "SDLC-driven toolkit to discover, plan, execute, verify and attest DES/3DES (TDEA) to AES migrations."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Dylan C. Koldan" }]
+keywords = ["cryptography", "aes", "3des", "tdea", "migration", "cbom", "sarif", "compliance", "sdlc"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: System Administrators",
+  "Intended Audience :: Information Technology",
+  "Topic :: Security :: Cryptography",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+]
+dependencies = ["cryptography>=41", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.5",
+  "tlslite-ng>=0.8",                                  # 3DES-capable TLS server for probe tests
+  "cyclonedx-python-lib[json-validation]>=8",        # CBOM schema validation in tests
+]
+
+[project.scripts]
+cryptomigrate = "cryptomigrate.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/dylanckoldan-boop/cryptomigrate"
+Repository = "https://github.com/dylanckoldan-boop/cryptomigrate"
+Documentation = "https://github.com/dylanckoldan-boop/cryptomigrate/tree/main/docs"
+Issues = "https://github.com/dylanckoldan-boop/cryptomigrate/issues"
+Changelog = "https://github.com/dylanckoldan-boop/cryptomigrate/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cryptomigrate = [
+  "policies/*.yaml",
+  "templates/*",
+  "templates/github/*",
+  "templates/github/workflows/*",
+  "templates/github/ISSUE_TEMPLATE/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "S", "UP"]
+ignore = ["S101", "S603", "S607", "UP007", "UP045"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B", "E501"]
+"examples/*" = ["S", "E501"]

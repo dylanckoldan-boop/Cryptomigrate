@@ -1,0 +1,11 @@
+# Paths this repository's own crypto gate does not scan, with the reason for each.
+# Shipped code that must reference legacy algorithms uses *inline / file-level* suppressions
+# instead (src/cryptomigrate/crypto/legacy.py, discovery/tlsprobe.py), so it stays visible to auditors.
+
+# Test suite and fixtures deliberately contain DES/3DES code and generate legacy ciphertext
+tests/
+# Detection rules and the config template necessarily name the legacy algorithms
+src/cryptomigrate/policies/
+src/cryptomigrate/templates/migration.yaml
+# Demo output directory (a simulated legacy system)
+demo-workspace/
