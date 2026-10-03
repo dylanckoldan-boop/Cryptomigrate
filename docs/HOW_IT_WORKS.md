@@ -5,7 +5,7 @@
 cryptomigrate is a Python package: Python 3.10 or newer, with two dependencies (`cryptography`, `PyYAML`).
 
 ```bash
-pip install "cryptomigrate @ git+https://github.com/dylanckoldan-boop/cryptomigrate@v1.1.0"   # from GitHub
+pip install "cryptomigrate @ git+https://github.com/dylanckoldan-boop/cryptomigrate@v1.1.1"   # from GitHub
 pip install -e ".[dev]"                                                           # from a clone, with test tools
 cryptomigrate --version && cryptomigrate selftest && cryptomigrate doctor         # confirm it works
 ```

@@ -70,7 +70,7 @@ All seven phase gates pass. Migration complete.
 ## Using it on your system
 
 ```bash
-pip install "cryptomigrate @ git+https://github.com/dylanckoldan-boop/cryptomigrate@v1.1.0"
+pip install "cryptomigrate @ git+https://github.com/dylanckoldan-boop/cryptomigrate@v1.1.1"
 cd your-system-repo
 cryptomigrate init --github                 # Phase 1: migration.yaml + CI gate + issue forms
 $EDITOR migration.yaml                      # charter, systems & owners, legacy profiles, data sources

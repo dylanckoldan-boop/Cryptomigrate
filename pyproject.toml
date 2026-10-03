@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cryptomigrate"
-version = "1.1.0"
+version = "1.1.1"
 description = "SDLC-driven toolkit to discover, plan, execute, verify and attest DES/3DES (TDEA) to AES migrations."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -54,6 +54,8 @@ cryptomigrate = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Fail fast when the crypto library deprecates something the legacy decrypt path relies on.
+filterwarnings = ["error::cryptography.utils.CryptographyDeprecationWarning"]
 
 [tool.ruff]
 line-length = 120

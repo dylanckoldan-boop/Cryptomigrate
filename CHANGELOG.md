@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 - 2026-10-03
+
+* Single-DES keys are expanded to the equivalent K1=K2=K3 TDEA bundle before decryption, ahead of
+  `cryptography` removing 8-byte TDEA keys (deprecated in 47+). Behaviour is unchanged.
+* The test suite now fails on `CryptographyDeprecationWarning`, so CI flags library deprecations early.
+* GitHub Actions bumped to current majors (checkout v7, setup-python v7, upload-artifact v7,
+  dependency-review-action v5, attest-build-provenance v4), including the adopter workflow template.
+
 ## 1.1.0 - 2026-10-03
 
 * **Hybrid RSA + symmetric systems**: legacy profiles with per-record RSA-wrapped DES/3DES content keys

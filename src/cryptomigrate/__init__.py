@@ -8,7 +8,7 @@ Library entry point for applications during the dual-mode transition::
     svc.decrypt(token, context="cards.pan#42")
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __all__ = ["CryptoService", "__version__"]
 
 

@@ -226,7 +226,9 @@ def decode(profile: LegacyProfile, data: bytes | str) -> bytes:
 
 
 def _cipher(key: bytes, mode) -> Cipher:
-    return Cipher(_tdea()(key), mode)  # an 8-byte key makes TDEA collapse to single DES (K1=K2=K3)
+    # Single DES is TDEA with K1 = K2 = K3. Expand 8-byte keys explicitly: cryptography 47+ deprecates
+    # 8-byte TDEA keys, and the expanded form is mathematically identical.
+    return Cipher(_tdea()(key * 3 if len(key) == 8 else key), mode)
 
 
 def decrypt(profile: LegacyProfile, key: bytes, data: bytes | str) -> bytes:

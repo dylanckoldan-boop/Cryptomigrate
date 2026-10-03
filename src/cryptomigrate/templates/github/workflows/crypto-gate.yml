@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install cryptomigrate
-        run: pip install "cryptomigrate @ git+https://github.com/dylanckoldan-boop/cryptomigrate@v1.1.0"
+        run: pip install "cryptomigrate @ git+https://github.com/dylanckoldan-boop/cryptomigrate@v1.1.1"
       - name: Discover DES/3DES (fails on high or critical)
         # CI has no database or internal-network access: data profiling and TLS probes run in the migration pipeline.
         run: cryptomigrate discover --no-data --no-tls --out crypto-artifacts --fail-on high
