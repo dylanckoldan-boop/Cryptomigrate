@@ -30,7 +30,7 @@ jobs:
           cyclonedx-py environment --output-format JSON --output-file dist/sbom.cdx.json
       - name: Test the built wheel before releasing it
         run: cryptomigrate selftest
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: "dist/*"
       - name: Publish GitHub release
