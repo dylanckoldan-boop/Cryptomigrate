@@ -20,8 +20,8 @@ jobs:
       contents: read
       security-events: write      # SARIF upload to code scanning
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install cryptomigrate
@@ -38,7 +38,7 @@ jobs:
           category: cryptomigrate
       - name: Upload inventory and CBOM
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: crypto-inventory
           path: crypto-artifacts/

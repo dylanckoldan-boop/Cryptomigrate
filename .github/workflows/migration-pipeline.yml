@@ -48,7 +48,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - run: cryptomigrate status | tee -a "$GITHUB_STEP_SUMMARY"
@@ -60,7 +60,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - run: cryptomigrate discover
@@ -68,7 +68,7 @@ jobs:
       - run: cryptomigrate plan
       - name: Phase 2 gate (report; passes once owners sign off)
         run: cryptomigrate gate --phase 2 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: discovery-${{ github.run_id }}
           path: ${{ env.EVIDENCE }}
@@ -80,7 +80,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - name: Entry criteria (Phase 4 gate)
@@ -90,7 +90,7 @@ jobs:
         run: cryptomigrate reencrypt
       - name: Phase 5 gate (report; passes once UAT is signed off)
         run: cryptomigrate gate --phase 5 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: validation-${{ github.run_id }}
@@ -103,7 +103,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - name: Entry criteria (Phase 5 gate must pass)
@@ -118,7 +118,7 @@ jobs:
           cryptomigrate reencrypt --wave "$WAVE" --apply --change-ticket "$CHANGE_TICKET" --approver "$REQUESTER"
       - name: Refresh inventory
         run: cryptomigrate discover && cryptomigrate assess
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: wave-${{ inputs.wave }}-${{ github.run_id }}
@@ -131,7 +131,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - run: cryptomigrate discover && cryptomigrate assess
@@ -141,7 +141,7 @@ jobs:
       - run: cryptomigrate attest
       - name: Phase 7 gate (report; needs key destruction, strict mode, sponsor sign-off)
         run: cryptomigrate gate --phase 7 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: closeout-${{ github.run_id }}

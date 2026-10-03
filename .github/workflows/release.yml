@@ -17,8 +17,8 @@ jobs:
       id-token: write        # OIDC token for signing the provenance
       attestations: write    # store the attestation
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python -m pip install build cyclonedx-bom
@@ -30,7 +30,7 @@ jobs:
           cyclonedx-py environment --output-format JSON --output-file dist/sbom.cdx.json
       - name: Test the built wheel before releasing it
         run: cryptomigrate selftest
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: "dist/*"
       - name: Publish GitHub release
