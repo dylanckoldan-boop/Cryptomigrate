@@ -48,7 +48,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - run: cryptomigrate status | tee -a "$GITHUB_STEP_SUMMARY"
@@ -60,7 +60,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - run: cryptomigrate discover
@@ -80,7 +80,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - name: Entry criteria (Phase 4 gate)
@@ -103,7 +103,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - name: Entry criteria (Phase 5 gate must pass)
@@ -131,7 +131,7 @@ jobs:
     env:
       CRYPTOMIGRATE_KEK: ${{ secrets.CRYPTOMIGRATE_KEK }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install
         run: python3 -m venv "$RUNNER_TEMP/cm" && "$RUNNER_TEMP/cm/bin/pip" install -q . && echo "$RUNNER_TEMP/cm/bin" >> "$GITHUB_PATH"
       - run: cryptomigrate discover && cryptomigrate assess
